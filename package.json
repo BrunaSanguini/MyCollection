@@ -1,0 +1,40 @@
+{
+  "name": "my-collection",
+  "version": "0.1.0",
+  "scripts": {
+    "ng": "ng",
+    "start": "npm run dev",
+    "dev": "concurrently -k -n NG,ELECTRON -c blue,cyan \"ng serve --port 4200\" \"wait-on tcp:localhost:4200 && npm run electron:dev\"",
+    "electron:dev": "tsc -p electron && electron . --serve",
+    "build": "ng build --base-href ./ && tsc -p electron",
+    "electron": "npm run build && electron .",
+    "watch": "ng build --watch --configuration development",
+    "dist": "npm run build && electron-builder --win",
+    "dist:dir": "npm run build && electron-builder --win --dir"
+  },
+  "private": true,
+  "dependencies": {},
+  "devDependencies": {
+    "@angular/build": "^21.2.29",
+    "@angular/cli": "^21.2.29",
+    "@angular/common": "^21.2.0",
+    "@angular/compiler": "^21.2.0",
+    "@angular/compiler-cli": "^21.2.0",
+    "@angular/core": "^21.2.0",
+    "@angular/forms": "^21.2.0",
+    "@angular/platform-browser": "^21.2.0",
+    "@angular/router": "^21.2.0",
+    "@types/node": "^22.20.5",
+    "concurrently": "^10.0.6",
+    "electron": "^44.10.1",
+    "electron-builder": "26.17.0",
+    "prettier": "^3.8.1",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0",
+    "typescript": "~5.9.2",
+    "wait-on": "^9.5.1"
+  },
+  "description": "Hub desktop para iniciar os apps que eu desenvolvo",
+  "main": "dist-electron/electron/main.js",
+  "author": "Bru"
+}

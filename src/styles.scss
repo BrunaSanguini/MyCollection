@@ -1,0 +1,54 @@
+/* Tokens do tema escuro (inspirado no launcher do Steam) */
+:root {
+  --mc-bg: #0e141d;
+  --mc-sidebar: #0a0f16;
+  --mc-surface: #151e2b;
+  --mc-tile: #131b27;
+  --mc-tile-selected: #1a2638;
+  --mc-input: #121a26;
+  --mc-hover: #141e2c;
+  --mc-active: #1b2a40;
+
+  --mc-border: #243246;
+  --mc-border-soft: #1c2738;
+  --mc-border-dashed: #2b3a52;
+  --mc-border-hero: #22304a;
+
+  --mc-text: #e7edf5;
+  --mc-muted: #9aabbf;
+
+  --mc-accent: #3b8cf0;
+  --mc-accent-text: #6cb0ff;
+  --mc-btn: #1f6fd6;
+  --mc-btn-hover: #2a7de6;
+  --mc-icon-bg: #1a2c47;
+  --mc-icon-border: #2b4470;
+  --mc-icon-border-soft: #24395c;
+
+  --mc-ok: #45c486;
+  --mc-warn: #f0b43b;
+  --mc-danger: #f0646a;
+
+  color-scheme: dark;
+}
+
+html, body { margin: 0; height: 100%; }
+
+body {
+  background: var(--mc-bg);
+  color: var(--mc-text);
+  font-family: Inter, 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+button:focus-visible { outline: 2px solid var(--mc-accent); outline-offset: 2px; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #243246; border-radius: 8px; border: 2px solid var(--mc-bg); }
+::-webkit-scrollbar-track { background: transparent; }
