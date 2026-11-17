@@ -1,7 +1,21 @@
 import { ChildProcess, spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
-import type { AppEntry } from '../../shared/library';
+import type { AppEntry, HubContract } from '../../shared/library';
 import { MAX_LOG_LINES, ProcessEvent, ProcessState, ProcessStatus } from '../../shared/process';
+import {
+  Fetch,
+  abortableSleep,
+  anyFreePort,
+  isPortFree,
+  isReady,
+  newToken,
+  portOf,
+  requestShutdown,
+  waitUntilReady,
+  withPort,
+  withPortArgument,
+} from './hub-contract';
+import type { AppSession, SessionStore } from './session-store';
 
 /**
  * Inicia, acompanha e para os apps cadastrados.
@@ -15,6 +29,9 @@ import { MAX_LOG_LINES, ProcessEvent, ProcessState, ProcessStatus } from '../../
  *  - "preso" (npm run dev, ng serve, app.exe): o processo fica vivo enquanto o app roda.
  *  - "em segundo plano" (docker compose up -d): o comando termina com código 0 e o app
  *    continua rodando fora daqui. Para esses, o PARAR usa o `stopCommand`.
+ *
+ * Apps com `contract` (ver HubContract) ganham porta livre, token por sessão, espera pela
+ * readiness e PARAR pelo shutdown HTTP. Matar o processo só acontece se o app não fechar.
  */
 export interface ProcessManagerOptions {
   /** Envia eventos para a interface */
@@ -29,6 +46,20 @@ export interface ProcessManagerOptions {
   pollIntervalMs?: number;
   /** Tempo até forçar o encerramento ao parar */
   stopTimeoutMs?: number;
+  /** Tempo que um app de contrato tem para fechar depois do shutdown */
+  contractStopTimeoutMs?: number;
+  /** Onde ficam porta e token dos apps de contrato (sobrevive ao hub fechar) */
+  sessions?: SessionStore;
+  fetch?: Fetch;
+}
+
+/** Porta e token de um app de contrato */
+interface ContractSession {
+  port: number;
+  token: string;
+  /** URL do app na porta escolhida */
+  url: string;
+  pid?: number;
 }
 
 interface Proc {
@@ -39,6 +70,9 @@ interface Proc {
   detached: boolean;
   stopping: boolean;
   readyAbort?: AbortController;
+  session?: ContractSession;
+  /** Reaproveitado de uma sessão anterior do hub: sem processo filho, só o token */
+  adopted?: boolean;
 }
 
 export class ProcessManager {
@@ -50,11 +84,15 @@ export class ProcessManager {
   private readyTimeoutMs: number;
   private readonly pollIntervalMs: number;
   private readonly stopTimeoutMs: number;
+  private readonly contractStopTimeoutMs: number;
+  private readonly fetch: Fetch;
 
   constructor(private readonly opts: ProcessManagerOptions) {
     this.readyTimeoutMs = opts.readyTimeoutMs ?? 180_000;
     this.pollIntervalMs = opts.pollIntervalMs ?? 1_000;
     this.stopTimeoutMs = opts.stopTimeoutMs ?? 8_000;
+    this.contractStopTimeoutMs = opts.contractStopTimeoutMs ?? 30_000;
+    this.fetch = opts.fetch ?? ((url, init) => fetch(url, init));
   }
 
   /** Atualiza o tempo máximo de espera da URL (Configurações) */
@@ -104,6 +142,10 @@ export class ProcessManager {
       return this.fail(proc, 'Defina o "Diretório do projeto" deste app.');
     }
 
+    if (app.contract && app.url) {
+      return this.startWithContract(proc, app.contract, app.url, cwd);
+    }
+
     if (app.url && (await isUp(app.url))) {
       this.log(app.id, `⚠ ${app.url} já está respondendo antes de iniciar — a porta pode estar em uso por outro processo.`);
     }
@@ -121,7 +163,96 @@ export class ProcessManager {
         this.setState(proc, { status: 'running' });
       }
     });
+    this.watch(proc, child);
+    return { ...proc.state };
+  }
 
+  /** Início pelo contrato do hub: sessão anterior, porta livre, token e readiness */
+  private async startWithContract(
+    proc: Proc,
+    contract: HubContract,
+    url: string,
+    cwd: string,
+  ): Promise<ProcessState> {
+    const app = proc.app;
+
+    // O hub fechou com o app rodando? A sessão salva tem a porta e o token.
+    const saved = await this.sessions('get', app.id);
+    if (saved) {
+      const savedUrl = withPort(url, saved.port);
+      if (await isReady(withPort(url, saved.port, contract.readinessPath), this.fetch)) {
+        proc.session = { port: saved.port, token: saved.token, url: savedUrl, pid: saved.pid };
+        proc.adopted = true;
+        this.log(app.id, `✔ Já estava rodando em ${savedUrl} (sessão anterior do hub).`);
+        this.ready(proc, savedUrl);
+        return { ...proc.state };
+      }
+      await this.sessions('remove', app.id);
+    }
+
+    const wanted = portOf(url);
+    if (await isReady(withPort(url, wanted, contract.readinessPath), this.fetch)) {
+      return this.fail(
+        proc,
+        `Já existe uma cópia de "${app.name}" em ${url}, aberta fora do My Collection. ` +
+          'Feche essa cópia para iniciar por aqui.',
+      );
+    }
+
+    const port = (await isPortFree(wanted)) ? wanted : await anyFreePort();
+    if (port !== wanted) this.log(app.id, `⚠ A porta ${wanted} está ocupada; usando a ${port}.`);
+    const token = newToken();
+    const appUrl = withPort(url, port);
+    proc.session = { port, token, url: appUrl };
+
+    const command = withPortArgument(app.command, port);
+    this.log(app.id, `$ ${command}${cwd ? `   (em ${cwd})` : ''}`);
+    this.log(app.id, `  token de encerramento em ${contract.tokenEnv}`);
+    const child = this.run(app.id, command, cwd || undefined, { [contract.tokenEnv]: token });
+    proc.child = child;
+
+    child.once('spawn', () => {
+      this.setState(proc, { pid: child.pid });
+      if (child.pid !== undefined && proc.session) {
+        proc.session.pid = child.pid;
+        void this.sessions('save', {
+          appId: app.id,
+          port,
+          token,
+          pid: child.pid,
+          startedAt: new Date().toISOString(),
+        });
+      }
+      void this.waitForContract(proc, contract, appUrl);
+    });
+    this.watch(proc, child);
+    return { ...proc.state };
+  }
+
+  private async waitForContract(proc: Proc, contract: HubContract, url: string): Promise<void> {
+    const abort = new AbortController();
+    proc.readyAbort = abort;
+    const readinessUrl = withPort(url, portOf(url), contract.readinessPath);
+    this.log(proc.app.id, `… aguardando ${readinessUrl} ficar UP`);
+    const result = await waitUntilReady({
+      readinessUrl,
+      timeoutMs: this.readyTimeoutMs,
+      signal: abort.signal,
+      exited: () => !proc.child,
+      fetch: this.fetch,
+    });
+    if (result === 'ready') {
+      this.ready(proc, url);
+    } else if (result === 'timeout' && proc.state.status === 'starting') {
+      const seconds = Math.round(this.readyTimeoutMs / 1000);
+      this.log(proc.app.id, `⚠ O app não ficou pronto em ${seconds}s. O processo continua rodando.`);
+      this.setState(proc, { status: 'running' });
+    }
+  }
+
+  /** Liga os eventos do processo filho ao estado do app */
+  private watch(proc: Proc, child: ChildProcess): void {
+    const app = proc.app;
     child.once('error', (err) => {
       this.fail(proc, `Falha ao executar o comando: ${err.message}`);
     });
@@ -129,6 +260,11 @@ export class ProcessManager {
     child.once('exit', (code, signal) => {
       proc.child = undefined;
       if (proc.stopping) return; // stop() cuida do estado
+      if (proc.session) {
+        // O app de contrato fechou sozinho: a sessão não vale mais
+        proc.session = undefined;
+        void this.sessions('remove', app.id);
+      }
 
       const status = proc.state.status;
       if (code === 0 && isBackgroundStyle(app) && (status === 'starting' || status === 'running')) {
@@ -149,8 +285,6 @@ export class ProcessManager {
         this.fail(proc, `O processo terminou com ${why}. Veja os logs.`);
       }
     });
-
-    return { ...proc.state };
   }
 
   // ---------------------------------------------------------------- parar
@@ -167,7 +301,9 @@ export class ProcessManager {
     this.log(id, '■ Parando…');
     this.opts.closeWindows?.(id);
 
-    if (proc.child && proc.child.exitCode === null) {
+    if (proc.session) {
+      await this.stopWithContract(proc, proc.session);
+    } else if (proc.child && proc.child.exitCode === null) {
       await this.killTree(proc.child);
     }
 
@@ -186,8 +322,64 @@ export class ProcessManager {
     return { ...proc.state };
   }
 
+  /**
+   * PARAR de um app de contrato: shutdown com o token e espera o app fechar sozinho, para ele
+   * salvar o banco. Só força o encerramento depois de `contractStopTimeoutMs`.
+   */
+  private async stopWithContract(proc: Proc, session: ContractSession): Promise<void> {
+    const id = proc.app.id;
+    const contract = proc.app.contract;
+    if (contract) {
+      const shutdownUrl = withPort(session.url, session.port, contract.shutdownPath);
+      const status = await requestShutdown(shutdownUrl, session.token, this.fetch);
+      if (status !== null && status >= 200 && status < 300) {
+        this.log(id, '… encerramento aceito; esperando o app fechar');
+      } else if (status === null) {
+        this.log(id, '⚠ O app não respondeu ao pedido de encerramento.');
+      } else {
+        this.log(id, `⚠ O app recusou o pedido de encerramento (HTTP ${status}).`);
+      }
+    }
+
+    const closed = proc.child
+      ? await waitForExit(proc.child, this.contractStopTimeoutMs)
+      : await this.waitAdoptedClosed(session, contract);
+    if (!closed) {
+      const seconds = Math.round(this.contractStopTimeoutMs / 1000);
+      this.log(id, `⚠ O app não fechou em ${seconds}s; encerrando o processo à força.`);
+      if (proc.child) await this.killTree(proc.child);
+      else if (session.pid !== undefined) forceKillTree(session.pid);
+    } else {
+      this.log(id, '✔ O app fechou sozinho.');
+    }
+    proc.session = undefined;
+    proc.adopted = false;
+    await this.sessions('remove', id);
+  }
+
+  /** App de uma sessão anterior: sem processo filho, fechou quando a porta parar de responder */
+  private async waitAdoptedClosed(
+    session: ContractSession,
+    contract: HubContract | undefined,
+  ): Promise<boolean> {
+    const deadline = Date.now() + this.contractStopTimeoutMs;
+    const probe = withPort(session.url, session.port, contract?.readinessPath ?? '/');
+    while (Date.now() < deadline) {
+      const alive = session.pid !== undefined && isAlive(session.pid);
+      if (!alive && !(await isUp(probe))) return true;
+      await abortableSleep(250);
+    }
+    return false;
+  }
+
   /** Encerra tudo que ainda está vivo (ao fechar o My Collection). Não roda stopCommand. */
   async shutdown(): Promise<void> {
+    // Apps de contrato fecham pelo shutdown, para não perder o que foi salvo por último
+    const contract = [...this.procs.values()].filter(
+      (p) => p.session && ['starting', 'running'].includes(p.state.status),
+    );
+    await Promise.all(contract.map((p) => this.stop(p.app.id)));
+
     const alive = [...this.procs.values()].filter((p) => p.child && p.child.exitCode === null);
     for (const p of alive) {
       p.stopping = true;
@@ -198,7 +390,12 @@ export class ProcessManager {
 
   // ---------------------------------------------------------------- internos
 
-  private run(id: string, command: string, cwd?: string): ChildProcess {
+  private run(
+    id: string,
+    command: string,
+    cwd?: string,
+    extraEnv: Record<string, string> = {},
+  ): ChildProcess {
     const child = spawn(command, {
       cwd,
       shell: true,
@@ -211,6 +408,7 @@ export class ProcessManager {
         NO_COLOR: '1',
         // Impede que CLIs (CRA, Vite…) abram o navegador sozinhas — quem abre é o hub
         BROWSER: 'none',
+        ...extraEnv,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -272,9 +470,7 @@ export class ProcessManager {
     while (!abort.signal.aborted && Date.now() < deadline) {
       if (await isUp(url)) {
         if (abort.signal.aborted) return;
-        this.log(proc.app.id, `✔ Pronto em ${url}`);
-        this.setState(proc, { status: 'running', url });
-        if (proc.app.openMode !== 'none') this.opts.open(proc.app, url);
+        this.ready(proc, url);
         return;
       }
       await sleep(this.pollIntervalMs, abort.signal);
@@ -282,6 +478,33 @@ export class ProcessManager {
     if (!abort.signal.aborted && proc.state.status === 'starting') {
       this.log(proc.app.id, `⚠ ${url} não respondeu em ${Math.round(this.readyTimeoutMs / 1000)}s. O processo continua rodando.`);
       this.setState(proc, { status: 'running' });
+    }
+  }
+
+  private ready(proc: Proc, url: string): void {
+    this.log(proc.app.id, `✔ Pronto em ${url}`);
+    this.setState(proc, { status: 'running', url });
+    if (proc.app.openMode !== 'none') this.opts.open(proc.app, url);
+  }
+
+  /** Sessões em disco são um extra: se o arquivo falhar, o app continua funcionando */
+  private async sessions(action: 'get', appId: string): Promise<AppSession | undefined>;
+  private async sessions(action: 'remove', appId: string): Promise<void>;
+  private async sessions(action: 'save', session: AppSession): Promise<void>;
+  private async sessions(
+    action: 'get' | 'remove' | 'save',
+    arg: string | AppSession,
+  ): Promise<AppSession | undefined | void> {
+    const store = this.opts.sessions;
+    if (!store) return undefined;
+    try {
+      if (action === 'get') return await store.get(arg as string);
+      if (action === 'remove') return await store.remove(arg as string);
+      return await store.save(arg as AppSession);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[sessions] ${action} falhou: ${msg}`);
+      return undefined;
     }
   }
 
@@ -360,6 +583,39 @@ async function isUp(url: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      child.off('exit', done);
+      resolve(false);
+    }, timeoutMs);
+    function done(): void {
+      clearTimeout(timer);
+      resolve(true);
+    }
+    child.once('exit', done);
+  });
+}
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+function forceKillTree(pid: number): void {
+  if (process.platform === 'win32') {
+    spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true });
+  } else {
+    try { process.kill(-pid, 'SIGKILL'); } catch { /* já morreu */ }
+    try { process.kill(pid, 'SIGKILL'); } catch { /* já morreu */ }
   }
 }
 

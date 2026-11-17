@@ -10,10 +10,11 @@
     "electron": "npm run build && electron .",
     "watch": "ng build --watch --configuration development",
     "dist": "npm run build && electron-builder --win",
-    "dist:dir": "npm run build && electron-builder --win --dir"
+    "dist:dir": "npm run build && electron-builder --win --dir",
+    "test": "vitest run",
+    "typecheck": "tsc -p electron --noEmit"
   },
   "private": true,
-  "dependencies": {},
   "devDependencies": {
     "@angular/build": "^21.2.29",
     "@angular/cli": "^21.2.29",
@@ -32,6 +33,7 @@
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
     "typescript": "~5.9.2",
+    "vitest": "4.1.12",
     "wait-on": "^9.5.1"
   },
   "description": "Hub desktop para iniciar os apps que eu desenvolvo",

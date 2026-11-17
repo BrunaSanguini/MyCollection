@@ -6,6 +6,7 @@ import { sanitizeLibrary } from '../shared/library';
 import { DEFAULT_SETTINGS, Settings, sanitizeSettings } from '../shared/settings';
 import { AppWindows } from './launcher/app-windows';
 import { ProcessManager } from './launcher/process-manager';
+import { SessionStore } from './launcher/session-store';
 import { ICON_EXTENSIONS, IconStore } from './storage/icon-store';
 import { JsonFile } from './storage/json-file';
 import { JsonLibraryRepository, LibraryRepository } from './storage/library-repository';
@@ -47,6 +48,8 @@ const processes = new ProcessManager({
   },
   open: (entry, url) => appWindows.open(entry, url),
   closeWindows: (id) => appWindows.close(id),
+  // Porta e token dos apps de contrato: %APPDATA%\My Collection\sessions.json
+  sessions: new SessionStore(path.join(app.getPath('userData'), 'sessions.json')),
 });
 
 /** Busca o app no arquivo salvo — o renderer só manda o id, nunca o comando */
