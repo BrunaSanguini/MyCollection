@@ -1,10 +1,22 @@
 import { ChangeDetectionStrategy, Component, ElementRef, afterNextRender, inject, signal, viewChild } from '@angular/core';
-import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { toSignal } from '@angular/core/rxjs-interop';
+import {
+  AbstractControl,
+  NonNullableFormBuilder,
+  ReactiveFormsModule,
+  ValidationErrors,
+  Validators,
+} from '@angular/forms';
 import { AppsStore } from '../../core/apps.store';
 import { electronApi } from '../../core/electron-api';
 import {
+  APP_TEMPLATES,
   AppEntry,
   AppKind,
+  AppTemplate,
+  DEFAULT_HUB_CONTRACT,
+  TOKEN_ENV_RE,
+  URL_PATH_RE,
   ICON_COLORS,
   ICON_COLOR_STYLE,
   IconColor,
@@ -43,6 +55,8 @@ export class AppDialog {
 
   protected readonly kinds = Object.entries(KIND_LABEL) as [AppKind, string][];
   protected readonly openModes = Object.entries(OPEN_MODE_LABEL) as [OpenMode, string][];
+  protected readonly templates = APP_TEMPLATES;
+  protected readonly templateHint = signal<string | null>(null);
 
   protected readonly form = this.fb.group({
     name: ['', [Validators.required, Validators.maxLength(60)]],
@@ -56,6 +70,15 @@ export class AppDialog {
     openMode: ['own-window' as OpenMode],
     icon: [''],
     color: ['blue' as IconColor],
+    // Contrato do hub (porta, token, readiness e shutdown) — ver shared/library.ts
+    useContract: [false],
+    tokenEnv: [DEFAULT_HUB_CONTRACT.tokenEnv, Validators.pattern(TOKEN_ENV_RE)],
+    readinessPath: [DEFAULT_HUB_CONTRACT.readinessPath, Validators.pattern(URL_PATH_RE)],
+    shutdownPath: [DEFAULT_HUB_CONTRACT.shutdownPath, Validators.pattern(URL_PATH_RE)],
+  }, { validators: contractNeedsUrl });
+
+  protected readonly useContract = toSignal(this.form.controls.useContract.valueChanges, {
+    initialValue: false,
   });
 
   constructor() {
@@ -65,14 +88,7 @@ export class AppDialog {
     this.title = this.editing ? 'Editar app' : 'Adicionar app';
 
     if (this.editing) {
-      const { id: _id, ...values } = this.editing;
-      this.form.setValue({
-        ...values,
-        url: values.url ?? '',
-        stopCommand: values.stopCommand ?? '',
-        icon: values.icon ?? '',
-        color: values.color ?? 'blue',
-      });
+      this.fill(this.editing);
     } else {
       // Novo app entra na pasta que está aberta na sidebar (se for uma pasta)
       const view = this.store.view();
@@ -83,19 +99,49 @@ export class AppDialog {
     afterNextRender(() => this.nameInput()?.nativeElement.focus());
   }
 
+  /** Preenche o formulário com um app (edição) ou um modelo (novo) */
+  private fill(entry: Partial<AppEntry>): void {
+    const contract = entry.contract;
+    this.form.patchValue({
+      name: entry.name ?? '',
+      description: entry.description ?? '',
+      kind: entry.kind ?? 'web-local',
+      ...(entry.folderId !== undefined ? { folderId: entry.folderId } : {}),
+      ...(entry.workingDir !== undefined ? { workingDir: entry.workingDir } : {}),
+      command: entry.command ?? '',
+      stopCommand: entry.stopCommand ?? '',
+      url: entry.url ?? '',
+      openMode: entry.openMode ?? 'own-window',
+      icon: entry.icon ?? '',
+      color: entry.color ?? 'blue',
+      useContract: !!contract,
+      ...(contract ?? DEFAULT_HUB_CONTRACT),
+    });
+  }
+
+  protected applyTemplate(template: AppTemplate): void {
+    this.fill(template.entry);
+    this.templateHint.set(template.hint);
+  }
+
   protected submit(): void {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
       return;
     }
-    const v = this.form.getRawValue();
+    const { useContract, tokenEnv, readinessPath, shutdownPath, ...v } = this.form.getRawValue();
+    const url = v.url.trim();
     this.store.saveApp(
       {
         ...v,
         name: v.name.trim(),
-        url: v.url.trim() || undefined,
+        url: url || undefined,
         stopCommand: v.stopCommand.trim() || undefined,
         icon: v.icon || undefined,
+        contract:
+          useContract && url
+            ? { tokenEnv: tokenEnv.trim(), readinessPath: readinessPath.trim(), shutdownPath: shutdownPath.trim() }
+            : undefined,
       },
       this.editing?.id,
     );
@@ -131,8 +177,19 @@ export class AppDialog {
     this.store.deleteApp(this.editing.id);
   }
 
-  protected invalid(control: 'name' | 'command' | 'url'): boolean {
+  protected invalid(control: 'name' | 'command' | 'url' | 'tokenEnv' | 'readinessPath' | 'shutdownPath'): boolean {
     const c = this.form.controls[control];
     return c.invalid && c.touched;
   }
+
+  protected contractWithoutUrl(): boolean {
+    return !!this.form.errors?.['contractNeedsUrl'] && this.form.controls.url.touched;
+  }
+}
+
+/** O hub pergunta a readiness e pede o shutdown na URL do app */
+function contractNeedsUrl(group: AbstractControl): ValidationErrors | null {
+  const useContract = group.get('useContract')?.value as boolean;
+  const url = (group.get('url')?.value as string).trim();
+  return useContract && !url ? { contractNeedsUrl: true } : null;
 }

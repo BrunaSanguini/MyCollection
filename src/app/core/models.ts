@@ -3,7 +3,9 @@ import type { ProcessStatus } from '../../../shared/process';
 
 // Tipos de dados vêm do arquivo compartilhado com o Electron
 export type { AppEntry, AppKind, Folder, IconColor, Library, OpenMode } from '../../../shared/library';
-export { ICON_COLORS } from '../../../shared/library';
+export type { HubContract } from '../../../shared/library';
+export { APP_TEMPLATES, type AppTemplate } from '../../../shared/templates';
+export { DEFAULT_HUB_CONTRACT, ICON_COLORS, TOKEN_ENV_RE, URL_PATH_RE } from '../../../shared/library';
 export type { Settings } from '../../../shared/settings';
 
 export type { ProcessState, ProcessStatus as RunStatus } from '../../../shared/process';
