@@ -4,7 +4,7 @@ Hub desktop (Electron + Angular) para organizar e iniciar os apps que eu desenvo
 
 ## Requisitos
 
-- Node.js 20.19+ ou 22.12+ (recomendado: 22 LTS)
+- Node.js 22.12+ ou 24 (o CI usa a versão do `.nvmrc`)
 - npm 10+
 
 ## Rodando
@@ -69,6 +69,42 @@ Dicas:
 - Para `ng serve`, deixe a URL como `http://localhost:4200` — e não rode dois apps na mesma porta (o hub avisa nos logs).
 - Os logs ficam em memória (últimas 1000 linhas por app) e somem ao fechar o hub.
 
+## Apps com o contrato do hub
+
+Apps feitos para o My Collection, como a [Minha Livraria](https://github.com/BrunaSanguini/MyLibrary), seguem um contrato. No formulário, marque **Este app segue o contrato do hub** (ou use **Começar de um modelo → Minha Livraria**):
+
+| Etapa | O que o hub faz |
+| --- | --- |
+| Porta | Usa a da URL se estiver livre; senão, qualquer livre. Passa como `--server.port=<porta>` |
+| Token | Gera um token novo a cada sessão e entrega na variável de ambiente do formulário (ex.: `MINHA_LIVRARIA_SHUTDOWN_TOKEN`) |
+| Pronto | Pergunta a readiness (`/actuator/health/readiness`) com pausa de 200 ms que dobra até 2 s, até `{"status":"UP"}` |
+| Uma cópia só | Se o hub fechou com o app aberto, reaproveita a sessão em vez de abrir outro. Se já há uma cópia aberta fora do hub, avisa e não inicia |
+| PARAR | `POST /actuator/shutdown` com o token no cabeçalho `X-MyCollection-Token` e espera o app fechar sozinho (até 30 s). Só então encerra à força |
+| Fechar o hub | Faz o mesmo PARAR em cada app de contrato |
+
+Porta e token da sessão ficam em `%APPDATA%\My Collection\sessions.json`, apagados ao parar.
+
+### Cadastrar a Minha Livraria
+
+1. Baixe o `minha-livraria-X.Y.Z-windows-x64.zip` da [última versão](https://github.com/BrunaSanguini/MyLibrary/releases/latest) e extraia (ex.: `C:\Apps`).
+2. No hub: **Adicionar app → Começar de um modelo → Minha Livraria**.
+3. Em **Diretório do projeto**, escolha a pasta com o `MinhaLivraria.exe` (ex.: `C:\Apps\MinhaLivraria`) e salve.
+4. **INICIAR** abre o navegador quando o app fica pronto; **PARAR** fecha o app sem perder dados.
+
+## Testes
+
+```bash
+npm test            # Vitest: contrato do hub, sessões, validação e o ProcessManager com um app falso
+npm run typecheck   # TypeScript do processo principal
+```
+
+O CI também baixa o zip da última release da Minha Livraria num runner Windows e roda `electron/launcher/minha-livraria.e2e.test.ts`: inicia pelo hub, grava um livro, fecha pelo shutdown e confere o livro na sessão seguinte. Para rodar no seu Windows:
+
+```powershell
+$env:MINHA_LIVRARIA_DIR = 'C:\Apps\MinhaLivraria'
+npx vitest run minha-livraria
+```
+
 ## Estrutura
 
 ```
@@ -76,6 +112,7 @@ shared/
   library.ts       tipos + validação usados pelo Electron e pelo Angular
   process.ts       estados e eventos de execução
   settings.ts      configurações + validação
+  templates.ts     modelos de apps prontos (Minha Livraria)
 build/             ícone do app (icon.svg → icon.png / icon.ico)
 electron-builder.yml  configuração do instalador (NSIS)
 electron/
@@ -87,6 +124,8 @@ electron/
     icon-store.ts          imagens dos apps (protocolo mc-icon://)
   launcher/
     process-manager.ts     inicia/para processos, logs, espera a URL responder
+    hub-contract.ts        porta, token, readiness e shutdown do contrato do hub
+    session-store.ts       sessions.json: porta e token dos apps de contrato em execução
     app-windows.ts         janelas próprias dos apps (sem acesso ao hub)
 src/app/
   core/
@@ -113,3 +152,4 @@ src/app/
 - [x] **Etapa 2** — Persistência em JSON (`userData`) via IPC, CRUD de pastas, excluir app, seletor de diretório
 - [x] **Etapa 3** — Launcher real: `child_process` por app, status, parar, logs, abrir janela/navegador
 - [x] **Etapa 4** — Empacotamento (electron-builder), ícones personalizados, configurações, backup
+- [x] **Etapa 5** — Contrato do hub (porta, token, readiness, shutdown), modelo da Minha Livraria e testes
