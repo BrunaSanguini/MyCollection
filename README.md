@@ -1,49 +1,155 @@
 # My Collection
 
-Hub desktop que reúne os apps que eu desenvolvo e os inicia com um clique. Cada app roda na própria máquina e abre no navegador padrão.
+Hub desktop (Electron + Angular) para organizar e iniciar os apps que eu desenvolvo.
 
-> **Status:** começando pelo `launcher`, a peça que inicia e encerra os apps. A interface (Electron + Angular) vem depois.
+## Requisitos
 
-## Launcher
+- Node.js 22.12+ ou 24 (o CI usa a versão do `.nvmrc`)
+- npm 10+
 
-Módulo em TypeScript, para o processo principal do Electron, em [`src/launcher`](src/launcher). Ele segue o contrato que os apps locais cumprem, definido no [ADR-0001 da Minha Livraria](https://github.com/BrunaSanguini/MyLibrary/blob/main/docs/adr/0001-arquitetura-macro.md):
-
-| Passo | Como funciona |
-|---|---|
-| Uma instância por vez | Antes de iniciar, consulta a readiness da sessão salva e da porta padrão. Se o app responde, só abre o navegador. |
-| Porta | A padrão do app (8471 na Minha Livraria), ou outra livre se estiver ocupada, passada com `--server.port`. |
-| Token | Um token aleatório por sessão, entregue por variável de ambiente (`MINHA_LIVRARIA_SHUTDOWN_TOKEN`). |
-| Readiness | `GET /actuator/health/readiness` até `UP`, com pausa que dobra até 2 s. Desiste em 120 s ou se o processo terminar antes. |
-| Navegador | Abre `http://127.0.0.1:<porta>/` quando o app está pronto. |
-| Encerramento | `POST /actuator/shutdown` com o token no header `X-MyCollection-Token`, para o app fechar o banco. Encerramento forçado (`taskkill /F /T`) só se o app não terminar em 30 s. |
-| Sessões | Porta, token e pid ficam num arquivo JSON. Se o hub for fechado e aberto de novo com o app rodando, ele ainda consegue encerrá-lo. |
-
-Um app iniciado fora do hub (pelo terminal, por exemplo) é reconhecido pela readiness: o hub abre o navegador, mas não o encerra, porque não tem o token.
-
-```ts
-
-import path from 'node:path';
-import { app, shell } from 'electron';
-import { AppLauncher, minhaLivraria, nodeSystem, SessionStore } from './launcher';
-
-const launcher = new AppLauncher(
-  nodeSystem((url) => shell.openExternal(url)),
-  new SessionStore(path.join(app.getPath('userData'), 'sessions.json')),
-);
-const livraria = minhaLivraria('C:\\Apps\\MinhaLivraria\\MinhaLivraria.exe');
-
-await launcher.open(livraria);  // inicia, espera ficar pronto e abre o navegador
-await launcher.close(livraria); // 'graceful', 'forced' ou 'not-running'
-```
-
-## Desenvolvimento
-
-Requer Node.js 22 ou mais novo.
+## Rodando
 
 ```bash
-npm ci
-npm test           # Vitest
-npm run typecheck  # TypeScript
+npm install
+npm run dev        # ng serve + janela Electron com hot reload
 ```
 
-Os testes usam um sistema falso em memória (processos, portas, navegador e relógio). Nenhum teste inicia um app de verdade nem abre o navegador. O teste de ponta a ponta com o executável real fica no repositório da Minha Livraria (`frontend/e2e/hub-contract.spec.ts`).
+## Instalar no Windows (app empacotado)
+
+```bash
+npm install          # instala o electron-builder (só na primeira vez)
+npm run dist         # gera release/My Collection Setup <versão>.exe
+```
+
+Rode o instalador gerado em `release/`. Ele cria atalhos na Área de Trabalho e no Menu Iniciar.
+Como o app não é assinado digitalmente, o Windows SmartScreen pode avisar na primeira vez: **Mais informações → Executar assim mesmo**.
+
+- `npm run dist:dir` gera só a pasta `release/win-unpacked/` (abre `My Collection.exe` direto, sem instalar) — bom para testar.
+- Para lançar uma nova versão, aumente `"version"` no `package.json` antes do `npm run dist`.
+- Desinstalar **não** apaga seus dados (`%APPDATA%\My Collection`).
+
+Outros scripts:
+
+| Script | O que faz |
+| --- | --- |
+| `npm run dev` | Sobe o Angular em `localhost:4200` e abre o Electron apontando para ele (DevTools destacado) |
+| `npm run build` | Build do Angular (`dist/`) + compila o Electron (`dist-electron/`) |
+| `npm run electron` | Build completo e abre o app como em produção |
+| `npm run ng -- serve` | Só o Angular no navegador (sem Electron) |
+| `npm run dist` | Gera o instalador Windows (`release/`) |
+| `npm run dist:dir` | Gera o app sem instalador (`release/win-unpacked/`) |
+
+## Onde ficam os dados
+
+Tudo fica em `%APPDATA%\My Collection\`:
+
+| Arquivo | Conteúdo |
+| --- | --- |
+| `library.json` | apps e pastas |
+| `settings.json` | configurações (abrir com o Windows, confirmar ao fechar, tempo de espera da URL) |
+| `icons/` | imagens personalizadas dos apps (cópias; as não usadas são apagadas ao abrir o hub) |
+
+Em **Configurações → Dados** dá para abrir essa pasta, **exportar** um backup (`.json`) e **importar** um backup.
+
+Se o arquivo for corrompido (ex.: edição manual com erro), ele é guardado como `library.corrupt-<data>.json` e o app recomeça com as pastas padrão.
+Rodando só `ng serve` no navegador (sem Electron), os dados vão para o `localStorage`.
+
+## Como o INICIAR funciona
+
+1. O hub roda o **comando de inicialização** no **diretório do projeto** (via shell, como no terminal).
+2. Se o app tem **URL**, o hub espera ela responder e então abre em **janela própria** ou no **navegador** (conforme "Abrir em").
+   Sem URL, o app é considerado rodando assim que o processo sobe.
+3. **PARAR** encerra o processo e todos os filhos (`taskkill /T` no Windows). Se houver **comando para parar**, ele roda em seguida.
+4. Apps **em segundo plano** (tipo Docker ou com comando para parar, ex.: `docker compose up -d`): quando o comando
+   termina com sucesso, o app continua "Em execução" e o PARAR usa o comando para parar (ex.: `docker compose down`).
+5. Fechar o My Collection encerra os processos que ele iniciou. Containers em segundo plano continuam rodando.
+
+Dicas:
+- A variável `BROWSER=none` é passada aos apps para que CLIs como Vite/CRA não abram o navegador sozinhas.
+- Para `ng serve`, deixe a URL como `http://localhost:4200` — e não rode dois apps na mesma porta (o hub avisa nos logs).
+- Os logs ficam em memória (últimas 1000 linhas por app) e somem ao fechar o hub.
+
+## Apps com o contrato do hub
+
+Apps feitos para o My Collection, como a [Minha Livraria](https://github.com/BrunaSanguini/MyLibrary), seguem um contrato. No formulário, marque **Este app segue o contrato do hub** (ou use **Começar de um modelo → Minha Livraria**):
+
+| Etapa | O que o hub faz |
+| --- | --- |
+| Porta | Usa a da URL se estiver livre; senão, qualquer livre. Passa como `--server.port=<porta>` |
+| Token | Gera um token novo a cada sessão e entrega na variável de ambiente do formulário (ex.: `MINHA_LIVRARIA_SHUTDOWN_TOKEN`) |
+| Pronto | Pergunta a readiness (`/actuator/health/readiness`) com pausa de 200 ms que dobra até 2 s, até `{"status":"UP"}` |
+| Uma cópia só | Se o hub fechou com o app aberto, reaproveita a sessão em vez de abrir outro. Se já há uma cópia aberta fora do hub, avisa e não inicia |
+| PARAR | `POST /actuator/shutdown` com o token no cabeçalho `X-MyCollection-Token` e espera o app fechar sozinho (até 30 s). Só então encerra à força |
+| Fechar o hub | Faz o mesmo PARAR em cada app de contrato |
+
+Porta e token da sessão ficam em `%APPDATA%\My Collection\sessions.json`, apagados ao parar.
+
+### Cadastrar a Minha Livraria
+
+1. Baixe o `minha-livraria-X.Y.Z-windows-x64.zip` da [última versão](https://github.com/BrunaSanguini/MyLibrary/releases/latest) e extraia (ex.: `C:\Apps`).
+2. No hub: **Adicionar app → Começar de um modelo → Minha Livraria**.
+3. Em **Diretório do projeto**, escolha a pasta com o `MinhaLivraria.exe` (ex.: `C:\Apps\MinhaLivraria`) e salve.
+4. **INICIAR** abre o navegador quando o app fica pronto; **PARAR** fecha o app sem perder dados.
+
+## Testes
+
+```bash
+npm test            # Vitest: contrato do hub, sessões, validação e o ProcessManager com um app falso
+npm run typecheck   # TypeScript do processo principal
+```
+
+O CI também baixa o zip da última release da Minha Livraria num runner Windows e roda `electron/launcher/minha-livraria.e2e.test.ts`: inicia pelo hub, grava um livro, fecha pelo shutdown e confere o livro na sessão seguinte. Para rodar no seu Windows:
+
+```powershell
+$env:MINHA_LIVRARIA_DIR = 'C:\Apps\MinhaLivraria'
+npx vitest run minha-livraria
+```
+
+## Estrutura
+
+```
+shared/
+  library.ts       tipos + validação usados pelo Electron e pelo Angular
+  process.ts       estados e eventos de execução
+  settings.ts      configurações + validação
+  templates.ts     modelos de apps prontos (Minha Livraria)
+build/             ícone do app (icon.svg → icon.png / icon.ico)
+electron-builder.yml  configuração do instalador (NSIS)
+electron/
+  main.ts          processo principal: janela, IPC
+  preload.ts       ponte segura (window.myCollection)
+  storage/
+    json-file.ts           JSON com escrita atômica + backup se corromper
+    library-repository.ts  LibraryRepository + JsonLibraryRepository
+    icon-store.ts          imagens dos apps (protocolo mc-icon://)
+  launcher/
+    process-manager.ts     inicia/para processos, logs, espera a URL responder
+    hub-contract.ts        porta, token, readiness e shutdown do contrato do hub
+    session-store.ts       sessions.json: porta e token dos apps de contrato em execução
+    app-windows.ts         janelas próprias dos apps (sem acesso ao hub)
+src/app/
+  core/
+    models.ts      AppEntry, Folder, tipos e labels
+    library.gateway.ts  Electron (IPC) ou localStorage, escolhido em runtime
+    process.gateway.ts  processos reais (Electron) ou simulados (navegador)
+    apps.store.ts  estado com signals (filtros, seleção, status, CRUD, persistência, backup)
+    settings.service.ts configurações (settings.json ou localStorage)
+    electron-api.ts contrato tipado do preload
+  components/
+    sidebar/       barra lateral recolhível (busca, pastas, ações)
+    app-hero/      destaque do app selecionado + INICIAR/PARAR
+    app-grid/      grade de ícones
+    app-dialog/    formulário adicionar/editar
+    app-logs/      painel de logs estilo terminal
+    app-avatar/    ícone do app (imagem ou iniciais coloridas)
+    settings-dialog/ tela de Configurações
+    icon/          ícones SVG
+```
+
+## Roadmap
+
+- [x] **Etapa 1** — Scaffold Angular + Electron e interface do protótipo (dados em memória, execução simulada)
+- [x] **Etapa 2** — Persistência em JSON (`userData`) via IPC, CRUD de pastas, excluir app, seletor de diretório
+- [x] **Etapa 3** — Launcher real: `child_process` por app, status, parar, logs, abrir janela/navegador
+- [x] **Etapa 4** — Empacotamento (electron-builder), ícones personalizados, configurações, backup
+- [x] **Etapa 5** — Contrato do hub (porta, token, readiness, shutdown), modelo da Minha Livraria e testes

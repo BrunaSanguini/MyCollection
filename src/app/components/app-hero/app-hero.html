@@ -1,0 +1,81 @@
+@if (app(); as a) {
+  @let proc = store.processOf(a.id);
+  <section class="hero" aria-label="App selecionado">
+    <app-avatar class="avatar" [name]="a.name" [icon]="a.icon" [color]="a.color" [fontSize]="44" [radius]="20" />
+
+    <div class="info">
+      <div class="meta-row">
+        <span class="kind">{{ kindLabel[a.kind] }}</span>
+        <span class="pill" [attr.data-status]="status()">
+          <span class="dot"></span>{{ statusLabel[status()] }}
+        </span>
+        @if (proc?.pid; as pid) { <span class="pid">PID {{ pid }}</span> }
+      </div>
+      <h1>{{ a.name }}</h1>
+      @if (a.description) { <p class="desc">{{ a.description }}</p> }
+      @if (status() === 'error' && proc?.error) {
+        <p class="error-msg" role="alert">{{ proc?.error }}</p>
+      }
+      <div class="facts">
+        <span>Comando: <code>{{ a.command || '—' }}</code></span>
+        @if (a.url) { <span>URL: <code>{{ a.url }}</code></span> }
+        <span>Abre em: <strong>{{ openLabel[a.openMode] }}</strong></span>
+        <span>Pasta: <strong>{{ store.folderName(a.folderId) }}</strong></span>
+      </div>
+    </div>
+
+    <div class="actions">
+      @switch (status()) {
+        @case ('starting') {
+          <button type="button" class="cta starting" (click)="store.stop(a.id)" title="Clique para cancelar">
+            INICIANDO…
+          </button>
+        }
+        @case ('stopping') {
+          <button type="button" class="cta starting" disabled>PARANDO…</button>
+        }
+        @case ('running') {
+          <button type="button" class="cta stop" (click)="store.stop(a.id)">
+            <app-icon name="stop" [size]="16" /> PARAR
+          </button>
+        }
+        @default {
+          <button type="button" class="cta" (click)="store.start(a.id)">
+            <app-icon name="play" [size]="18" /> {{ status() === 'error' ? 'TENTAR DE NOVO' : 'INICIAR' }}
+          </button>
+        }
+      }
+      <div class="row-btns">
+        @if (status() === 'running' && (proc?.url || a.url)) {
+          <button type="button" class="secondary" (click)="store.openApp(a.id)">
+            <app-icon name="external" [size]="16" /> Abrir
+          </button>
+        }
+        <button type="button" class="secondary" [class.on]="store.logsOpen()" (click)="store.toggleLogs()"
+          [attr.aria-pressed]="store.logsOpen()">
+          <app-icon name="terminal" [size]="16" /> Logs
+        </button>
+        <button type="button" class="secondary" (click)="store.openEdit(a)" aria-label="Editar configuração"
+          title="Editar configuração">
+          <app-icon name="edit" [size]="16" />
+        </button>
+      </div>
+      @if (store.simulated) { <small class="sim">Modo navegador: execução simulada</small> }
+    </div>
+  </section>
+}
+@else {
+  <section class="hero empty" aria-label="Boas-vindas">
+    <div class="art"><app-icon name="grid" [size]="48" [stroke]="1.6" /></div>
+    <div class="info">
+      <span class="kind">Boas-vindas ao My Collection</span>
+      <h1>Nenhum app ainda</h1>
+      <p class="desc">Cadastre o primeiro app com o diretório do projeto e o comando que o inicia. Depois é só clicar em INICIAR.</p>
+    </div>
+    <div class="actions">
+      <button type="button" class="cta" (click)="store.openNew()">
+        <app-icon name="plus" [size]="18" [stroke]="2.4" /> ADICIONAR APP
+      </button>
+    </div>
+  </section>
+}

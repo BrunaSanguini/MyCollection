@@ -1,0 +1,44 @@
+# Empacotamento do My Collection — https://www.electron.build
+# Gerar instalador:  npm run dist      → release/My Collection Setup <versão>.exe
+# Só a pasta do app: npm run dist:dir  → release/win-unpacked/My Collection.exe (teste rápido, sem instalar)
+
+appId: dev.bru.mycollection
+productName: My Collection
+copyright: Copyright © 2026 Bru
+
+directories:
+  output: release
+  buildResources: build
+
+# Só o necessário vai para dentro do app (o Angular já sai compilado em dist/)
+files:
+  - package.json
+  - dist/my-collection/browser/**
+  - dist-electron/**
+  - "!**/*.map"
+
+asar: true
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+  # Sem certificado de assinatura: o Windows SmartScreen pode avisar na primeira execução
+  # ("Mais informações" → "Executar assim mesmo")
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: My Collection
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  # Mantém library.json, settings.json e ícones ao desinstalar
+  deleteAppDataOnUninstall: false
+  artifactName: "My Collection Setup ${version}.${ext}"
+
+# Sem publicação automática (GitHub Releases etc.)
+publish: null

@@ -1,0 +1,148 @@
+<div class="backdrop" (click)="store.closeDialog()"></div>
+
+<form class="dialog" role="dialog" aria-modal="true" [attr.aria-label]="title" [formGroup]="form" (ngSubmit)="submit()">
+  <div class="head">
+    <h2>{{ title }}</h2>
+    <button type="button" class="icon-btn" aria-label="Fechar" (click)="store.closeDialog()">
+      <app-icon name="close" />
+    </button>
+  </div>
+
+  @if (!isEdit && templates.length) {
+    <div class="templates">
+      <span>Começar de um modelo:</span>
+      @for (t of templates; track t.label) {
+        <button type="button" class="ghost small" (click)="applyTemplate(t)">{{ t.label }}</button>
+      }
+    </div>
+    @if (templateHint(); as hint) { <small class="hint">{{ hint }}</small> }
+  }
+
+  <label>Nome
+    <input #nameInput type="text" formControlName="name" placeholder="Ex.: Biblioteca Pessoal" />
+    @if (invalid('name')) { <small class="error">Informe um nome.</small> }
+  </label>
+
+  <fieldset class="icon-field">
+    <legend>Ícone</legend>
+    <app-avatar class="preview" [name]="form.controls.name.value || '?'" [icon]="form.controls.icon.value || undefined"
+      [color]="form.controls.color.value" [fontSize]="26" [radius]="14" />
+    <div class="icon-controls">
+      <div class="swatches" role="radiogroup" aria-label="Cor do ícone">
+        @for (c of colors; track c) {
+          <button type="button" class="swatch" role="radio" [attr.aria-checked]="form.controls.color.value === c"
+            [attr.aria-label]="colorStyle[c].label" [attr.title]="colorStyle[c].label"
+            [style.background]="colorStyle[c].bg" [style.color]="colorStyle[c].fg" (click)="setColor(c)">
+            <span class="dot"></span>
+          </button>
+        }
+      </div>
+      <div class="icon-btns">
+        @if (canBrowse) {
+          <button type="button" class="ghost small" (click)="pickIcon()">
+            <app-icon name="image" [size]="15" /> {{ form.controls.icon.value ? 'Trocar imagem…' : 'Usar imagem…' }}
+          </button>
+        }
+        @if (form.controls.icon.value) {
+          <button type="button" class="ghost small" (click)="form.controls.icon.setValue('')">Remover imagem</button>
+        }
+        @if (iconError(); as err) { <small class="error">{{ err }}</small> }
+        @else if (!canBrowse) { <small class="hint">Imagens personalizadas só no app (Electron).</small> }
+        @else { <small class="hint">PNG, JPG, SVG, WEBP ou ICO até 2 MB. A cor vale quando não há imagem.</small> }
+      </div>
+    </div>
+  </fieldset>
+
+  <label>Descrição
+    <input type="text" formControlName="description" placeholder="Uma linha sobre o app" />
+  </label>
+
+  <div class="row">
+    <label>Tipo
+      <select formControlName="kind">
+        @for (k of kinds; track k[0]) { <option [value]="k[0]">{{ k[1] }}</option> }
+      </select>
+    </label>
+    <label>Pasta
+      <select formControlName="folderId">
+        @for (f of store.folders(); track f.id) { <option [value]="f.id">{{ f.name }}</option> }
+        <option value="">Sem pasta</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="field">
+    <label for="workingDir">Diretório do projeto</label>
+    <div class="with-btn">
+      <input id="workingDir" type="text" formControlName="workingDir" placeholder="C:\Users\bruna\Documents\…\meu-app" />
+      @if (canBrowse) {
+        <button type="button" class="ghost browse" (click)="browse()">
+          <app-icon name="folder-open" [size]="16" /> Procurar…
+        </button>
+      }
+    </div>
+  </div>
+
+  <label>Comando de inicialização
+    <input type="text" class="mono" formControlName="command" placeholder="npm start · docker compose up -d · app.exe" />
+    @if (invalid('command')) { <small class="error">Informe o comando que inicia o app.</small> }
+  </label>
+
+  <label>Comando para parar (opcional)
+    <input type="text" class="mono" formControlName="stopCommand" placeholder="docker compose down" />
+    <small class="hint">Use quando o comando de iniciar roda em segundo plano (ex.: <code>docker compose up -d</code>).</small>
+  </label>
+
+  <div class="row">
+    <label>URL ao iniciar (opcional)
+      <input type="text" formControlName="url" placeholder="http://localhost:4200" />
+      @if (invalid('url')) { <small class="error">Use um endereço http:// ou https://</small> }
+      @else { <small class="hint">O hub espera essa URL responder para abrir o app.</small> }
+    </label>
+    <label>Abrir em
+      <select formControlName="openMode">
+        @for (m of openModes; track m[0]) { <option [value]="m[0]">{{ m[1] }}</option> }
+      </select>
+    </label>
+  </div>
+
+  <fieldset class="contract">
+    <legend>Contrato do My Collection</legend>
+    <label class="check">
+      <input type="checkbox" formControlName="useContract" />
+      <span>Este app segue o contrato do hub</span>
+    </label>
+    <small class="hint">
+      O hub escolhe a porta (<code>--server.port</code>), entrega um token por sessão, espera a readiness
+      ficar <code>UP</code> e, no PARAR, pede o shutdown com o token, para o app fechar sem perder dados.
+    </small>
+    @if (useContract()) {
+      @if (contractWithoutUrl()) { <small class="error">Informe a URL do app: é nela que o hub fala com ele.</small> }
+      <label>Variável do token
+        <input type="text" class="mono" formControlName="tokenEnv" placeholder="MINHA_LIVRARIA_SHUTDOWN_TOKEN" />
+        @if (invalid('tokenEnv')) { <small class="error">Use letras, números e _ (sem começar com número).</small> }
+      </label>
+      <div class="row">
+        <label>Readiness
+          <input type="text" class="mono" formControlName="readinessPath" />
+          @if (invalid('readinessPath')) { <small class="error">Um caminho que começa com /</small> }
+        </label>
+        <label>Shutdown
+          <input type="text" class="mono" formControlName="shutdownPath" />
+          @if (invalid('shutdownPath')) { <small class="error">Um caminho que começa com /</small> }
+        </label>
+      </div>
+    }
+  </fieldset>
+
+  <div class="foot">
+    @if (isEdit) {
+      <button type="button" class="danger" (click)="remove()" (blur)="confirmDelete.set(false)">
+        <app-icon name="trash" [size]="16" /> {{ confirmDelete() ? 'Confirmar exclusão' : 'Excluir app' }}
+      </button>
+    }
+    <span class="grow"></span>
+    <button type="button" class="ghost" (click)="store.closeDialog()">Cancelar</button>
+    <button type="submit" class="primary">Salvar app</button>
+  </div>
+</form>

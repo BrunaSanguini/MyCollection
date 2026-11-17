@@ -1,0 +1,127 @@
+@let collapsed = store.sidebarCollapsed();
+
+<nav aria-label="Ações">
+  <div class="brand">
+    <span class="brand-mark"><app-icon name="grid" [size]="18" /></span>
+    @if (!collapsed) {
+      <span class="brand-name">My Collection</span>
+    }
+  </div>
+
+  <button type="button" class="item toggle" (click)="store.toggleSidebar()"
+    [attr.aria-label]="collapsed ? 'Expandir barra lateral' : 'Minimizar barra lateral'"
+    [attr.aria-expanded]="!collapsed">
+    <app-icon name="chevron-left" [size]="18" [class.flip]="collapsed" />
+    @if (!collapsed) { <span class="label">Minimizar</span> }
+  </button>
+
+  @if (!collapsed) {
+    <label class="search">
+      <span class="sr-only">Buscar app</span>
+      <app-icon name="search" [size]="16" />
+      <input #search type="search" placeholder="Buscar app…" [value]="store.query()" (input)="onQuery($event)" />
+    </label>
+  } @else {
+    <button type="button" class="item" aria-label="Buscar app" (click)="openSearch()">
+      <app-icon name="search" />
+    </button>
+  }
+
+  <button type="button" class="item" [class.active]="store.view() === 'all'" (click)="store.setView('all')"
+    aria-label="Todos os apps">
+    <app-icon name="grid" />
+    @if (!collapsed) {
+      <span class="label">Todos os apps</span><span class="count">{{ store.apps().length }}</span>
+    }
+  </button>
+
+  <button type="button" class="item" [class.active]="store.view() === 'running'" (click)="store.setView('running')"
+    aria-label="Em execução">
+    <app-icon name="activity" />
+    @if (!collapsed) {
+      <span class="label">Em execução</span><span class="count ok">{{ store.runningCount() }}</span>
+    }
+  </button>
+
+  @if (!collapsed) {
+    <div class="section">Pastas</div>
+  } @else {
+    <div class="divider"></div>
+  }
+
+  @for (folder of store.folders(); track folder.id) {
+    @if (editing() === folder.id && !collapsed) {
+      <div class="edit-row">
+        <input #folderInput type="text" maxlength="60" [value]="folder.name" aria-label="Novo nome da pasta"
+          (keydown)="onFolderKey($event)" (blur)="cancel()" />
+        @if (folderError(); as err) { <small class="error">{{ err }}</small> }
+      </div>
+    } @else {
+      <div class="folder-row">
+        <button type="button" class="item" [class.active]="store.view() === folder.id"
+          (click)="store.setView(folder.id)" [attr.aria-label]="'Pasta ' + folder.name"
+          [attr.title]="collapsed ? folder.name : null">
+          <app-icon name="folder" />
+          @if (!collapsed) {
+            <span class="label">{{ folder.name }}</span><span class="count">{{ count(folder.id) }}</span>
+          }
+        </button>
+        @if (!collapsed) {
+          <div class="row-actions">
+            <button type="button" class="mini" (click)="startRename(folder)" [attr.aria-label]="'Renomear ' + folder.name"
+              title="Renomear">
+              <app-icon name="edit" [size]="14" />
+            </button>
+            <button type="button" class="mini" (click)="remove(folder)" [disabled]="count(folder.id) > 0"
+              [attr.aria-label]="'Excluir ' + folder.name"
+              [attr.title]="count(folder.id) > 0 ? 'Mova ou exclua os apps desta pasta antes' : 'Excluir pasta'">
+              <app-icon name="trash" [size]="14" />
+            </button>
+          </div>
+        }
+      </div>
+    }
+  }
+
+  @if (store.noFolderCount() > 0) {
+    <button type="button" class="item" [class.active]="store.view() === NO_FOLDER" (click)="store.setView(NO_FOLDER)"
+      aria-label="Sem pasta">
+      <app-icon name="inbox" />
+      @if (!collapsed) {
+        <span class="label">Sem pasta</span><span class="count">{{ store.noFolderCount() }}</span>
+      }
+    </button>
+  }
+
+  @if (editing() === 'new' && !collapsed) {
+    <div class="edit-row">
+      <input #folderInput type="text" maxlength="60" placeholder="Nome da pasta" aria-label="Nome da nova pasta"
+        (keydown)="onFolderKey($event)" (blur)="cancel()" />
+      @if (folderError(); as err) { <small class="error">{{ err }}</small> }
+      @else { <small class="hint">Enter para criar · Esc para cancelar</small> }
+    </div>
+  } @else {
+    <button type="button" class="item dashed" aria-label="Nova pasta" (click)="startCreate()">
+      <app-icon name="plus" />
+      @if (!collapsed) { <span class="label">Nova pasta</span> }
+    </button>
+  }
+
+  <div class="spacer"></div>
+
+  @if (store.saveError(); as err) {
+    <p class="save-error" role="alert" [attr.title]="err">
+      @if (!collapsed) { {{ err }} } @else { ! }
+    </p>
+  }
+
+  <button type="button" class="item primary" aria-label="Adicionar app" (click)="store.openNew()">
+    <app-icon name="plus" [stroke]="2.2" />
+    @if (!collapsed) { <span class="label">Adicionar app</span> }
+  </button>
+
+  <button type="button" class="item" aria-label="Configurações" (click)="settings.open.set(true)">
+    <app-icon name="settings" />
+    @if (!collapsed) { <span class="label">Configurações</span> }
+  </button>
+</nav>

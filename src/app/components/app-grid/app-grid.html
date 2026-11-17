@@ -1,0 +1,36 @@
+@let apps = store.filteredApps();
+
+<section aria-label="Apps">
+  <header>
+    <h2>{{ store.viewTitle() }}</h2>
+    <span class="muted">{{ apps.length }} {{ apps.length === 1 ? 'app' : 'apps' }}</span>
+    <span class="grow"></span>
+    <span class="muted small">Clique para selecionar · duplo clique para iniciar</span>
+  </header>
+
+  <div class="grid">
+    @for (app of apps; track app.id) {
+      @let status = store.statusOf(app.id);
+      <button type="button" class="tile" [class.selected]="app.id === store.selected()?.id"
+        (click)="store.select(app.id)" (dblclick)="store.toggleRun(app.id)" [attr.aria-label]="app.name">
+        <div class="art">
+          <app-avatar [name]="app.name" [icon]="app.icon" [color]="app.color" />
+          @if (status === 'running') { <span class="badge">ATIVO</span> }
+          @if (status === 'starting' || status === 'stopping') { <span class="badge warn">…</span> }
+          @if (status === 'error') { <span class="badge err">ERRO</span> }
+        </div>
+        <span class="name">{{ app.name }}</span>
+        <span class="sub">{{ kindLabel[app.kind] }} · {{ store.folderName(app.folderId) }}</span>
+      </button>
+    }
+
+    <button type="button" class="tile add" (click)="store.openNew()" aria-label="Adicionar novo app">
+      <div class="art"><app-icon name="plus" [size]="40" [stroke]="1.6" /></div>
+      <span class="name">Novo app</span>
+    </button>
+  </div>
+
+  @if (apps.length === 0 && store.apps().length > 0) {
+    <p class="muted">Nenhum app encontrado aqui.</p>
+  }
+</section>

@@ -1,0 +1,78 @@
+<div class="backdrop" (click)="close()"></div>
+
+<section class="dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+  <div class="head">
+    <h2 id="settings-title">Configurações</h2>
+    @if (service.saving()) { <span class="saving">Salvando…</span> }
+    <button type="button" class="icon-btn" aria-label="Fechar" (click)="close()">
+      <app-icon name="close" />
+    </button>
+  </div>
+
+  <h3>Geral</h3>
+
+  <label class="switch-row" [class.disabled]="!canAutostart()">
+    <span class="text">
+      <strong>Abrir com o Windows</strong>
+      <small>
+        @if (canAutostart()) { O My Collection abre sozinho quando você entra no Windows. }
+        @else { Disponível no app instalado (não no modo de desenvolvimento). }
+      </small>
+    </span>
+    <input type="checkbox" role="switch" [checked]="s().launchAtLogin" [disabled]="!canAutostart()"
+      (change)="toggle('launchAtLogin', $event)" />
+  </label>
+
+  <label class="switch-row">
+    <span class="text">
+      <strong>Confirmar ao fechar</strong>
+      <small>Pergunta antes de fechar quando há apps em execução (eles são encerrados junto).</small>
+    </span>
+    <input type="checkbox" role="switch" [checked]="s().confirmOnQuit" (change)="toggle('confirmOnQuit', $event)" />
+  </label>
+
+  <label class="field-row">
+    <span class="text">
+      <strong>Tempo de espera da URL</strong>
+      <small>Quanto tempo o hub espera a URL do app responder antes de desistir ({{ min }}–{{ max }} s).</small>
+    </span>
+    <span class="number">
+      <input type="number" [min]="min" [max]="max" step="15" [value]="s().readyTimeoutSec" (change)="setTimeoutSec($event)"
+        aria-label="Tempo de espera em segundos" />
+      <span>s</span>
+    </span>
+  </label>
+
+  <h3>Dados</h3>
+
+  @if (isElectron()) {
+    <p class="path"><span>Arquivo:</span> <code>{{ info()?.dataFile }}</code></p>
+    <div class="btns">
+      <button type="button" class="ghost" (click)="store.revealDataFile()">
+        <app-icon name="folder-open" [size]="16" /> Abrir pasta de dados
+      </button>
+      <button type="button" class="ghost" (click)="exportLibrary()">
+        <app-icon name="download" [size]="16" /> Exportar backup…
+      </button>
+      <button type="button" class="ghost" [class.warn]="confirmImport()" (click)="importLibrary()"
+        (blur)="confirmImport.set(false)">
+        <app-icon name="upload" [size]="16" /> {{ confirmImport() ? 'Substituir tudo? Clique de novo' : 'Importar backup…' }}
+      </button>
+    </div>
+    <small class="hint">Importar substitui todos os apps e pastas atuais e para os apps em execução.</small>
+  } @else {
+    <p class="hint">No modo navegador os dados ficam no localStorage. Backup e importação só no app.</p>
+  }
+
+  @if (notice(); as n) {
+    <p class="notice" [class.error]="n.kind === 'error'" role="status">{{ n.text }}</p>
+  }
+  @if (service.error(); as err) { <p class="notice error" role="alert">{{ err }}</p> }
+
+  <h3>Sobre</h3>
+  <dl class="about">
+    <dt>Versão</dt><dd>{{ info()?.version ?? '—' }}</dd>
+    <dt>Electron</dt><dd>{{ info()?.electron ?? '—' }}</dd>
+    <dt>Modo</dt><dd>{{ !info() ? 'Navegador (dev)' : info()?.packaged ? 'Instalado' : 'Desenvolvimento' }}</dd>
+  </dl>
+</section>
