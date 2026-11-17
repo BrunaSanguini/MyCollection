@@ -13,11 +13,15 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # O binário do Electron só é preciso para abrir a janela, não para compilar e testar
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
 jobs:
-  launcher:
-    name: launcher
+  hub:
+    name: hub
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -29,3 +33,37 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - name: Build (Angular + Electron)
+        run: npm run build
+
+  minha-livraria:
+    # O hub com a Minha Livraria de verdade: o zip da última release, no Windows
+    name: minha-livraria
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Download the Minha Livraria release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'minha-livraria'
+          gh release download --repo BrunaSanguini/MyLibrary --pattern 'minha-livraria-*-windows-x64.zip*' --dir $dir
+          $zip = Get-ChildItem $dir -Filter '*.zip' | Select-Object -First 1
+          $expected = ((Get-Content "$($zip.FullName).sha256") -split '\s+')[0]
+          $actual = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash
+          if ($actual -ne $expected) { throw "SHA-256 diferente: $actual <> $expected" }
+          Expand-Archive $zip.FullName -DestinationPath $dir
+          $exe = Get-ChildItem $dir -Recurse -Filter 'MinhaLivraria.exe' | Select-Object -First 1
+          Write-Host "Usando $($zip.Name): $($exe.FullName)"
+          "MINHA_LIVRARIA_DIR=$($exe.DirectoryName)" | Out-File $env:GITHUB_ENV -Append
+      - name: Start and close it through the hub
+        run: npx vitest run minha-livraria
