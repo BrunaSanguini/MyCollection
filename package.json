@@ -1,0 +1,18 @@
+{
+  "name": "my-collection",
+  "private": true,
+  "description": "Hub desktop que reúne e inicia os apps locais de Bruna Sanguini.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "typescript": "6.0.3",
+    "vitest": "5.1.0"
+  }
+}
