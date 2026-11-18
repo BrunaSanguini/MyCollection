@@ -67,3 +67,19 @@ jobs:
           "MINHA_LIVRARIA_DIR=$($exe.DirectoryName)" | Out-File $env:GITHUB_ENV -Append
       - name: Start and close it through the hub
         run: npx vitest run minha-livraria
+      # A 1.0.0, para o hub atualizar para a última release
+      - name: Download Minha Livraria 1.0.0
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'minha-livraria-1.0.0'
+          gh release download v1.0.0 --repo BrunaSanguini/MyLibrary --pattern 'minha-livraria-*-windows-x64.zip' --dir $dir
+          $zip = Get-ChildItem $dir -Filter '*.zip' | Select-Object -First 1
+          Expand-Archive $zip.FullName -DestinationPath $dir
+          $exe = Get-ChildItem $dir -Recurse -Filter 'MinhaLivraria.exe' | Select-Object -First 1
+          "MINHA_LIVRARIA_OLD_DIR=$($exe.DirectoryName)" | Out-File $env:GITHUB_ENV -Append
+      - name: Update it through the hub
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npx vitest run atualiza-livraria

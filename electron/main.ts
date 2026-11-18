@@ -10,6 +10,7 @@ import { SessionStore } from './launcher/session-store';
 import { ICON_EXTENSIONS, IconStore } from './storage/icon-store';
 import { JsonFile } from './storage/json-file';
 import { JsonLibraryRepository, LibraryRepository } from './storage/library-repository';
+import { AppUpdater } from './updates/app-updater';
 
 /**
  * Processo principal do My Collection.
@@ -50,6 +51,22 @@ const processes = new ProcessManager({
   closeWindows: (id) => appWindows.close(id),
   // Porta e token dos apps de contrato: %APPDATA%\My Collection\sessions.json
   sessions: new SessionStore(path.join(app.getPath('userData'), 'sessions.json')),
+});
+
+const ACTIVE = new Set(['starting', 'running', 'stopping']);
+
+// Atualização dos apps pelas releases do GitHub (o zip é baixado em %APPDATA%\My Collection\updates)
+const updater = new AppUpdater({
+  downloadDir: path.join(app.getPath('userData'), 'updates'),
+  stop: (id) => processes.stop(id),
+  start: (entry) => processes.start(entry),
+  isActive: (id) => processes.list().some((p) => p.id === id && ACTIVE.has(p.status)),
+  log: (id, line) => processes.note(id, line),
+  progress: (id, progress) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('process:event', { type: 'update', id, progress });
+    }
+  },
 });
 
 /** Busca o app no arquivo salvo — o renderer só manda o id, nunca o comando */
@@ -202,7 +219,11 @@ function registerIpc(): void {
   });
 
   // ---- Execução dos apps
-  ipcMain.handle('process:start', async (_e, id: unknown) => processes.start(await findApp(id)));
+  ipcMain.handle('process:start', async (_e, id: unknown) => {
+    const entry = await findApp(id);
+    if (updater.isUpdating(entry.id)) throw new Error('O app está sendo atualizado. Espere terminar.');
+    return processes.start(entry);
+  });
   ipcMain.handle('process:stop', (_e, id: unknown) => processes.stop(String(id)));
   ipcMain.handle('process:list', () => processes.list());
   ipcMain.handle('process:logs', (_e, id: unknown) => processes.getLogs(String(id)));
@@ -213,6 +234,10 @@ function registerIpc(): void {
     const url = state?.url ?? entry.url;
     if (url) appWindows.open(entry.openMode === 'none' ? { ...entry, openMode: 'own-window' } : entry, url);
   });
+
+  // ---- Atualizações (só apps com releases conhecidas, ex.: Minha Livraria)
+  ipcMain.handle('update:check', async (_e, id: unknown) => updater.check(await findApp(id)));
+  ipcMain.handle('update:run', async (_e, id: unknown) => updater.update(await findApp(id)));
 
   // ---- Seletor de pasta (campo "Diretório do projeto")
   ipcMain.handle('dialog:pick-folder', async (_event, defaultPath: unknown) => {

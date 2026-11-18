@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import type { ProcessEvent, ProcessState } from '../../../shared/process';
+import type { UpdateInfo } from '../../../shared/updates';
 import { electronApi } from './electron-api';
 
 /**
@@ -16,6 +17,9 @@ export abstract class ProcessGateway {
   abstract list(): Promise<ProcessState[]>;
   abstract logs(id: string): Promise<string[]>;
   abstract clearLogs(id: string): Promise<void>;
+  /** null quando o app não tem atualização pelo hub (ou fora do Electron) */
+  abstract checkUpdate(id: string): Promise<UpdateInfo | null>;
+  abstract update(id: string): Promise<UpdateInfo | null>;
   /** Retorna função para cancelar a inscrição */
   abstract onEvent(callback: (event: ProcessEvent) => void): () => void;
 }
@@ -30,6 +34,8 @@ class ElectronProcessGateway extends ProcessGateway {
   list() { return this.api.listProcesses(); }
   logs(id: string) { return this.api.getLogs(id); }
   clearLogs(id: string) { return this.api.clearLogs(id); }
+  checkUpdate(id: string) { return this.api.checkUpdate(id); }
+  update(id: string) { return this.api.updateApp(id); }
   onEvent(callback: (event: ProcessEvent) => void) { return this.api.onProcessEvent(callback); }
 }
 
@@ -60,6 +66,8 @@ class SimulatedProcessGateway extends ProcessGateway {
   async list() { return [...this.states.values()]; }
   async logs(id: string) { return [...(this.logLines.get(id) ?? [])]; }
   async clearLogs(id: string) { this.logLines.delete(id); }
+  async checkUpdate(): Promise<UpdateInfo | null> { return null; }
+  async update(): Promise<UpdateInfo | null> { return null; }
 
   onEvent(callback: (event: ProcessEvent) => void) {
     this.listeners.add(callback);

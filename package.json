@@ -1,6 +1,6 @@
 {
   "name": "my-collection",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "scripts": {
     "ng": "ng",
     "start": "npm run dev",
@@ -26,6 +26,8 @@
     "@angular/platform-browser": "^21.2.0",
     "@angular/router": "^21.2.0",
     "@types/node": "^22.20.5",
+    "@types/yauzl": "^3.4.0",
+    "@types/yazl": "^3.3.1",
     "concurrently": "^10.0.6",
     "electron": "^44.10.1",
     "electron-builder": "26.17.0",
@@ -34,9 +36,13 @@
     "tslib": "^2.3.0",
     "typescript": "~5.9.2",
     "vitest": "4.1.12",
-    "wait-on": "^9.5.1"
+    "wait-on": "^9.5.1",
+    "yazl": "^3.3.1"
   },
   "description": "Hub desktop para iniciar os apps que eu desenvolvo",
   "main": "dist-electron/electron/main.js",
-  "author": "Bru"
+  "author": "Bru",
+  "dependencies": {
+    "yauzl": "^3.4.0"
+  }
 }

@@ -1,5 +1,6 @@
 import type { ProcessEvent, ProcessState } from '../../../shared/process';
 import type { Settings } from '../../../shared/settings';
+import type { UpdateInfo } from '../../../shared/updates';
 import type { Library } from './models';
 
 /** Contrato exposto pelo electron/preload.ts em `window.myCollection`. */
@@ -38,6 +39,10 @@ export interface MyCollectionApi {
   listProcesses(): Promise<ProcessState[]>;
   getLogs(id: string): Promise<string[]>;
   clearLogs(id: string): Promise<void>;
+  /** null quando o app não tem atualização pelo hub */
+  checkUpdate(id: string): Promise<UpdateInfo | null>;
+  /** Fecha, baixa, confere, instala e reabre; o andamento chega em onProcessEvent ('update') */
+  updateApp(id: string): Promise<UpdateInfo | null>;
   onProcessEvent(callback: (event: ProcessEvent) => void): () => void;
 }
 

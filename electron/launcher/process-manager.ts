@@ -111,6 +111,11 @@ export class ProcessManager {
     return [...this.procs.values()].map((p) => ({ ...p.state }));
   }
 
+  /** Escreve uma linha no log do app (ex.: o andamento de uma atualização) */
+  note(id: string, line: string): void {
+    this.log(id, line);
+  }
+
   getLogs(id: string): string[] {
     return [...(this.logs.get(id) ?? [])];
   }

@@ -52,6 +52,25 @@ h1 { margin: 0; font-size: 32px; line-height: 1.15; font-weight: 700; }
   margin: 0; padding: 8px 12px; border-radius: 8px; max-width: 620px;
   background: rgba(240, 100, 106, 0.12); border: 1px solid var(--mc-danger); color: var(--mc-danger);
 }
+.update {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  max-width: 620px; padding: 10px 12px 10px 14px; border-radius: 10px;
+  background: var(--mc-icon-bg); border: 1px solid var(--mc-icon-border);
+  font-size: 13px; color: var(--mc-text);
+  a { color: var(--mc-accent-text); }
+  &.busy { flex-direction: column; align-items: stretch; gap: 8px; }
+}
+.update-text { flex: 1 1 auto; strong { font-weight: 600; } }
+.update-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 36px; padding: 0 16px; border: 0; border-radius: 8px;
+  background: var(--mc-btn); color: #fff; font: inherit; font-weight: 700; cursor: pointer;
+  &:hover { background: var(--mc-btn-hover); }
+}
+.bar {
+  height: 6px; border-radius: 3px; background: var(--mc-bg); overflow: hidden;
+  span { display: block; height: 100%; background: var(--mc-accent); transition: width 0.2s; }
+}
 .sim { font-size: 11px; color: var(--mc-muted); text-align: center; }
 
 .cta {
@@ -65,6 +84,7 @@ h1 { margin: 0; font-size: 32px; line-height: 1.15; font-weight: 700; }
   &.starting { background: var(--mc-icon-bg); border: 1px solid var(--mc-icon-border); color: #9ccaff; cursor: progress; }
   &.starting:not(:disabled) { cursor: pointer; }
   &.stop { background: transparent; border: 1px solid var(--mc-ok); color: var(--mc-ok); }
+  &:disabled:not(.starting) { opacity: 0.5; cursor: not-allowed; }
 }
 
 .secondary {
