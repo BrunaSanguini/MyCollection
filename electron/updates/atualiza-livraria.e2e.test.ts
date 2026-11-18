@@ -34,7 +34,7 @@ const manager = new ProcessManager({
   contractStopTimeoutMs: 60_000,
 });
 
-afterAll(() => manager.shutdown());
+afterAll(() => manager.shutdown(), 120_000);
 
 /** No CI, a API do GitHub com o token do job (sem ele o limite é por IP, dividido com outros) */
 const githubFetch: Fetch = (input, init) =>
