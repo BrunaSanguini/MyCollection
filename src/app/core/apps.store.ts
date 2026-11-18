@@ -1,6 +1,7 @@
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import { LIBRARY_VERSION } from '../../../shared/library';
 import { MAX_LOG_LINES, ProcessEvent } from '../../../shared/process';
+import type { UpdateInfo, UpdateProgress } from '../../../shared/updates';
 import { electronApi } from './electron-api';
 import { LibraryGateway } from './library.gateway';
 import { AppEntry, Folder, LibraryView, NO_FOLDER, ProcessState, RunStatus, newId } from './models';
@@ -39,6 +40,11 @@ export class AppsStore {
   readonly sidebarCollapsed = signal(readBool(SIDEBAR_KEY));
   readonly dialog = signal<DialogState>(null);
   readonly storageKind = this.gateway.kind;
+  /** Versões dos apps atualizáveis (só os que têm releases conhecidas, ex.: Minha Livraria) */
+  readonly updates = signal<Record<string, UpdateInfo>>({});
+  /** Andamento da atualização em curso de cada app */
+  readonly updateProgress = signal<Record<string, UpdateProgress>>({});
+  readonly updateError = signal<Record<string, string>>({});
 
   private saveChain: Promise<unknown> = Promise.resolve();
 
@@ -103,6 +109,8 @@ export class AppsStore {
       // Processos que já estavam rodando (ex.: a janela foi recarregada)
       const running = await this.processGateway.list();
       this.processes.set(Object.fromEntries(running.map((p) => [p.id, p])));
+      // Procura versões novas em segundo plano; sem internet, só não aparece o botão
+      for (const app of lib.apps) void this.checkUpdate(app.id);
     } catch (err) {
       console.error('[store] falha ao carregar biblioteca', err);
       this.loadError.set('Não foi possível carregar seus apps. Veja o console para detalhes.');
@@ -193,16 +201,20 @@ export class AppsStore {
   }
 
   saveApp(entry: Omit<AppEntry, 'id'>, id?: string): void {
+    let savedId = id;
     if (id) {
       this.apps.update((list) => list.map((a) => (a.id === id ? { ...entry, id } : a)));
     } else {
       const created = { ...entry, id: newId(entry.name) };
+      savedId = created.id;
       this.apps.update((list) => [...list, created]);
       this.selectedId.set(created.id);
       this.view.set('all');
     }
     this.dialog.set(null);
     this.persist();
+    // A pasta pode ter mudado: a versão instalada é lida de novo depois de salvar
+    if (savedId) void this.saveChain.then(() => this.checkUpdate(savedId));
   }
 
   deleteApp(id: string): void {
@@ -273,6 +285,39 @@ export class AppsStore {
     }
   }
 
+  // ---- atualização
+  async checkUpdate(id: string): Promise<void> {
+    try {
+      const info = await this.processGateway.checkUpdate(id);
+      this.updates.update((all) => {
+        const { [id]: _, ...rest } = all;
+        return info ? { ...rest, [id]: info } : rest;
+      });
+    } catch (err) {
+      console.warn('[store] não deu para procurar atualização', err);
+    }
+  }
+
+  isUpdating(id: string): boolean {
+    const phase = this.updateProgress()[id]?.phase;
+    return phase !== undefined && phase !== 'done' && phase !== 'error';
+  }
+
+  async update(id: string): Promise<void> {
+    if (this.isUpdating(id)) return;
+    this.updateError.update(({ [id]: _, ...rest }) => rest);
+    const version = this.updates()[id]?.latest ?? '';
+    this.updateProgress.update((all) => ({ ...all, [id]: { phase: 'stopping', version } }));
+    try {
+      const info = await this.processGateway.update(id);
+      if (info) this.updates.update((all) => ({ ...all, [id]: info }));
+    } catch (err) {
+      this.updateError.update((all) => ({ ...all, [id]: errorMessage(err) }));
+    } finally {
+      this.updateProgress.update(({ [id]: _, ...rest }) => rest);
+    }
+  }
+
   toggleRun(id: string): void {
     const s = this.statusOf(id);
     if (s === 'stopping') return;
@@ -301,6 +346,10 @@ export class AppsStore {
   private onProcessEvent(event: ProcessEvent): void {
     if (event.type === 'state') {
       this.mergeState(event.state);
+      return;
+    }
+    if (event.type === 'update') {
+      this.updateProgress.update((all) => ({ ...all, [event.id]: event.progress }));
       return;
     }
     this.logs.update((all) => {

@@ -21,7 +21,34 @@
         @if (a.url) { <span>URL: <code>{{ a.url }}</code></span> }
         <span>Abre em: <strong>{{ openLabel[a.openMode] }}</strong></span>
         <span>Pasta: <strong>{{ store.folderName(a.folderId) }}</strong></span>
+        @if (update()?.installed; as installed) { <span>Versão: <strong>{{ installed }}</strong></span> }
       </div>
+      @if (progress(); as p) {
+        <div class="update busy" role="status">
+          <span class="update-text">
+            <strong>Atualizando para {{ p.version }}</strong>
+            · {{ phaseLabel[p.phase] }}@if (p.phase === 'downloading') { {{ p.percent ?? 0 }}%}
+          </span>
+          @if (p.phase === 'downloading') {
+            <span class="bar" aria-hidden="true"><span [style.width.%]="p.percent ?? 0"></span></span>
+          }
+        </div>
+      } @else if (update()?.available) {
+        <div class="update">
+          <span class="update-text">
+            <strong>Nova versão {{ update()?.latest }}</strong> · você tem a {{ update()?.installed }}
+            @if (update()?.releaseUrl; as url) {
+              · <a [href]="url" target="_blank" rel="noopener">ver novidades</a>
+            }
+          </span>
+          <button type="button" class="update-btn" (click)="store.update(a.id)">
+            <app-icon name="download" [size]="16" /> Atualizar
+          </button>
+        </div>
+      }
+      @if (updateError(); as message) {
+        <p class="error-msg" role="alert">Não deu para atualizar: {{ message }}</p>
+      }
     </div>
 
     <div class="actions">
@@ -35,12 +62,12 @@
           <button type="button" class="cta starting" disabled>PARANDO…</button>
         }
         @case ('running') {
-          <button type="button" class="cta stop" (click)="store.stop(a.id)">
+          <button type="button" class="cta stop" [disabled]="store.isUpdating(a.id)" (click)="store.stop(a.id)">
             <app-icon name="stop" [size]="16" /> PARAR
           </button>
         }
         @default {
-          <button type="button" class="cta" (click)="store.start(a.id)">
+          <button type="button" class="cta" [disabled]="store.isUpdating(a.id)" (click)="store.start(a.id)">
             <app-icon name="play" [size]="18" /> {{ status() === 'error' ? 'TENTAR DE NOVO' : 'INICIAR' }}
           </button>
         }

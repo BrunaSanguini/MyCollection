@@ -29,6 +29,8 @@ contextBridge.exposeInMainWorld('myCollection', {
   listProcesses: () => ipcRenderer.invoke('process:list'),
   getLogs: (id: string) => ipcRenderer.invoke('process:logs', id),
   clearLogs: (id: string) => ipcRenderer.invoke('process:clear-logs', id),
+  checkUpdate: (id: string) => ipcRenderer.invoke('update:check', id),
+  updateApp: (id: string) => ipcRenderer.invoke('update:run', id),
   onProcessEvent: (callback: (event: unknown) => void) => {
     const listener = (_e: IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on('process:event', listener);

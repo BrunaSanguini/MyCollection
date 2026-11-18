@@ -91,6 +91,17 @@ Porta e token da sessão ficam em `%APPDATA%\My Collection\sessions.json`, apaga
 3. Em **Diretório do projeto**, escolha a pasta com o `MinhaLivraria.exe` (ex.: `C:\Apps\MinhaLivraria`) e salve.
 4. **INICIAR** abre o navegador quando o app fica pronto; **PARAR** fecha o app sem perder dados.
 
+### Atualizar a Minha Livraria
+
+O hub lê a versão instalada (`app\MinhaLivraria.cfg`) e procura a última release no GitHub ao abrir e ao salvar o app. Quando há uma versão nova, o destaque mostra **Nova versão X.Y.Z** e o botão **Atualizar**, que:
+
+1. fecha o app pelo shutdown, se ele estiver aberto;
+2. baixa o zip para `%APPDATA%\My Collection\updates` e confere o `.sha256` da release (sem o `.sha256`, ou se não bater, não instala);
+3. extrai ao lado da pasta e troca as duas: a versão anterior fica em `<pasta>.anterior` até a próxima atualização;
+4. abre o app de novo, se ele estava aberto.
+
+Os dados ficam em `%USERPROFILE%\.minha-livraria`, fora da pasta do app, e não são tocados. Se algo falhar antes da troca, a versão que já estava instalada continua lá (e volta a abrir).
+
 ## Testes
 
 ```bash
@@ -105,6 +116,8 @@ $env:MINHA_LIVRARIA_DIR = 'C:\Apps\MinhaLivraria'
 npx vitest run minha-livraria
 ```
 
+No mesmo job, `electron/updates/atualiza-livraria.e2e.test.ts` abre a 1.0.0 pelo hub e a atualiza para a última release com o botão Atualizar de verdade (`AppUpdater`).
+
 ## Estrutura
 
 ```
@@ -113,6 +126,7 @@ shared/
   process.ts       estados e eventos de execução
   settings.ts      configurações + validação
   templates.ts     modelos de apps prontos (Minha Livraria)
+  updates.ts       de onde vêm as versões, comparação e andamento da atualização
 build/             ícone do app (icon.svg → icon.png / icon.ico)
 electron-builder.yml  configuração do instalador (NSIS)
 electron/
@@ -127,6 +141,9 @@ electron/
     hub-contract.ts        porta, token, readiness e shutdown do contrato do hub
     session-store.ts       sessions.json: porta e token dos apps de contrato em execução
     app-windows.ts         janelas próprias dos apps (sem acesso ao hub)
+  updates/
+    app-updater.ts         confere a última release, baixa, confere o SHA-256 e troca a pasta
+    zip.ts                 extrai o zip sem deixar sair da pasta
 src/app/
   core/
     models.ts      AppEntry, Folder, tipos e labels
@@ -153,3 +170,4 @@ src/app/
 - [x] **Etapa 3** — Launcher real: `child_process` por app, status, parar, logs, abrir janela/navegador
 - [x] **Etapa 4** — Empacotamento (electron-builder), ícones personalizados, configurações, backup
 - [x] **Etapa 5** — Contrato do hub (porta, token, readiness, shutdown), modelo da Minha Livraria e testes
+- [x] **Etapa 6** — Atualizar a Minha Livraria pelo hub (release do GitHub, SHA-256, troca da pasta)
