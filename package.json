@@ -16,7 +16,7 @@
   },
   "private": true,
   "devDependencies": {
-    "@angular/build": "^21.2.29",
+    "@angular/build": "^22.0.0",
     "@angular/cli": "^21.2.29",
     "@angular/common": "^21.2.0",
     "@angular/compiler": "^21.2.0",
