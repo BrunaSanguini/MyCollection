@@ -82,4 +82,7 @@ jobs:
       - name: Update it through the hub
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          # Uma pasta de dados só desta etapa: a do passo anterior já foi migrada pela última versão,
+          # e a 1.0.0 não abre um banco mais novo do que ela
+          APP_DATADIR: ${{ runner.temp }}\minha-livraria-1.0.0-dados
         run: npx vitest run atualiza-livraria
